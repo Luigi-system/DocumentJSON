@@ -1,0 +1,5 @@
+{
+  "name": "Document JSON",
+  "description": "A web-based document editor that allows users to create templates with dynamic variables. It features a drag-and-drop interface for inserting data fields and includes an integrated AI chatbot powered by Gemini for assistance.",
+  "requestFramePermissions": []
+}

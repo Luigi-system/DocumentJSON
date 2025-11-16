@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dynamic Document Editor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.27.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "uuid": "https://aistudiocdn.com/uuid@^13.0.0",
+    "@supabase/supabase-js": "https://aistudiocdn.com/@supabase/supabase-js@^2.45.0"
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+    /* Light Theme (Default) */
+    .theme-light { --bg-primary: #f3f4f6; --bg-secondary: #ffffff; --bg-tertiary: #e5e7eb; --text-primary: #1f2937; --text-secondary: #4b5563; --border-color: #d1d5db; --json-key: #a31515; --json-string: #0451a5; --json-number: #098658; --json-boolean: #0000ff; --json-null: #0000ff; --json-punct: #333; --syntax-keyword-color: #0000ff; --syntax-string-color: #a31515; --syntax-comment-color: #008000; --syntax-number-color: #098658; --syntax-boolean-color: #0000ff; --syntax-punctuation-color: #333333; --syntax-class-color: #267f99; --syntax-function-color: #795e26; --syntax-tag-color: #800000; --syntax-attr-color: #ff0000; --nav-active-bg: #e0e7ff; --nav-active-text: #4f46e5; }
+
+    /* Dark Theme */
+    .theme-dark { --bg-primary: #111827; --bg-secondary: #1f2937; --bg-tertiary: #374151; --text-primary: #f9fafb; --text-secondary: #9ca3af; --border-color: #4b5563; --json-key: #9cdcfe; --json-string: #ce9178; --json-number: #b5cea8; --json-boolean: #569cd6; --json-null: #569cd6; --json-punct: #d4d4d4; --syntax-keyword-color: #569cd6; --syntax-string-color: #ce9178; --syntax-comment-color: #6a9955; --syntax-number-color: #b5cea8; --syntax-boolean-color: #569cd6; --syntax-punctuation-color: #d4d4d4; --syntax-class-color: #4ec9b0; --syntax-function-color: #dcdcaa; --syntax-tag-color: #569cd6; --syntax-attr-color: #9cdcfe; --nav-active-bg: #374151; --nav-active-text: #6366f1; }
+    .theme-dark .prose { color: var(--text-secondary); }
+    .theme-dark .prose h1, .theme-dark .prose h2, .theme-dark .prose h3, .theme-dark .prose strong { color: var(--text-primary); }
+
+    /* Night Theme */
+    .theme-night { --bg-primary: #0d0d1a; --bg-secondary: #1f1f3a; --bg-tertiary: #2a3452; --text-primary: #e0e0ff; --text-secondary: #a0a0c0; --border-color: #30305a; --json-key: #d4d4d4; --json-string: #ce9178; --json-number: #b5cea8; --json-boolean: #569cd6; --json-null: #569cd6; --json-punct: #d4d4d4; --syntax-keyword-color: #c586c0; --syntax-string-color: #ce9178; --syntax-comment-color: #6a9955; --syntax-number-color: #b5cea8; --syntax-boolean-color: #569cd6; --syntax-punctuation-color: #d4d4d4; --syntax-class-color: #4ec9b0; --syntax-function-color: #dcdcaa; --syntax-tag-color: #569cd6; --syntax-attr-color: #9cdcfe; --nav-active-bg: #3c496a; --nav-active-text: #e0e0ff; }
+    .theme-night .prose { color: var(--text-secondary); }
+    .theme-night .prose h1, .theme-night .prose h2, .theme-night .prose h3, .theme-night .prose strong { color: var(--text-primary); }
+
+    /* Forest Theme */
+    .theme-forest { --bg-primary: #1a2a24; --bg-secondary: #2d4239; --bg-tertiary: #3c584b; --text-primary: #e8f5e9; --text-secondary: #a5d6a7; --border-color: #558b2f; --json-key: #c5e1a5; --json-string: #ffcc80; --json-number: #a5d6a7; --json-boolean: #81d4fa; --json-null: #81d4fa; --json-punct: #e8f5e9; --syntax-keyword-color: #81d4fa; --syntax-string-color: #ffcc80; --syntax-comment-color: #a5d6a7; --syntax-number-color: #c5e1a5; --syntax-boolean-color: #81d4fa; --syntax-punctuation-color: #e8f5e9; --syntax-class-color: #fff59d; --syntax-function-color: #ef9a9a; --syntax-tag-color: #81d4fa; --syntax-attr-color: #c5e1a5; --nav-active-bg: #3c584b; --nav-active-text: #e8f5e9; }
+    .theme-forest .prose { color: var(--text-secondary); }
+    .theme-forest .prose h1, .theme-forest .prose h2, .theme-forest .prose h3, .theme-forest .prose strong { color: var(--text-primary); }
+
+    /* Ocean Theme */
+    .theme-ocean { --bg-primary: #0d1b2a; --bg-secondary: #1b263b; --bg-tertiary: #415a77; --text-primary: #e0e1dd; --text-secondary: #778da9; --border-color: #778da9; --json-key: #82a0bc; --json-string: #a9d6e5; --json-number: #90e0ef; --json-boolean: #48cae4; --json-null: #48cae4; --json-punct: #e0e1dd; --syntax-keyword-color: #48cae4; --syntax-string-color: #a9d6e5; --syntax-comment-color: #778da9; --syntax-number-color: #90e0ef; --syntax-boolean-color: #48cae4; --syntax-punctuation-color: #e0e1dd; --syntax-class-color: #ade8f4; --syntax-function-color: #ffb4a2; --syntax-tag-color: #48cae4; --syntax-attr-color: #82a0bc; --nav-active-bg: #415a77; --nav-active-text: #e0e1dd; }
+    .theme-ocean .prose { color: var(--text-secondary); }
+    .theme-ocean .prose h1, .theme-ocean .prose h2, .theme-ocean .prose h3, .theme-ocean .prose strong { color: var(--text-primary); }
+
+    /* Component Styling using CSS Variables */
+    body { background-color: var(--bg-primary); color: var(--text-primary); font-family: 'Inter', sans-serif; }
+    .bg-main { background-color: var(--bg-primary); }
+    .bg-panel { background-color: var(--bg-secondary); }
+    .bg-editor-canvas { background-color: var(--bg-tertiary); }
+    .text-main { color: var(--text-primary); }
+    .text-subtle { color: var(--text-secondary); }
+    .border-main { border-color: var(--border-color); }
+    .fill-shape { fill: var(--text-secondary); }
+
+    /* JSON Editor Syntax Highlighting */
+    .json-key { color: var(--json-key); }
+    .json-string { color: var(--json-string); }
+    .json-number { color: var(--json-number); }
+    .json-boolean { color: var(--json-boolean); }
+    .json-null { color: var(--json-null); }
+    .json-punctuation { color: var(--json-punct); }
+    
+    /* Code Viewer Syntax Highlighting */
+    .syntax-keyword { color: var(--syntax-keyword-color); }
+    .syntax-string, .syntax-attr-value { color: var(--syntax-string-color); }
+    .syntax-comment { color: var(--syntax-comment-color); font-style: italic; }
+    .syntax-number, .syntax-boolean { color: var(--syntax-number-color); }
+    .syntax-punctuation { color: var(--syntax-punctuation-color); }
+    .syntax-class { color: var(--syntax-class-color); }
+    .syntax-function { color: var(--syntax-function-color); }
+    .syntax-tag { color: var(--syntax-tag-color); }
+    .syntax-component-tag { color: var(--syntax-class-color); }
+    .syntax-attr { color: var(--syntax-attr-color); }
+    .syntax-default { color: var(--text-primary); }
+
+    /* Page Overlays */
+    .page-watermark {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        pointer-events: none;
+        user-select: none;
+        font-weight: bold;
+        text-align: center;
+        white-space: nowrap;
+    }
+    .page-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        padding: 24px 48px;
+        color: #4b5563;
+        font-size: 14px;
+        text-align: center;
+    }
+    .page-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: 24px 48px;
+        color: #4b5563;
+        font-size: 14px;
+        text-align: center;
+    }
+    
+    /* Animations */
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideInUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
+    .animate-slide-in-up { animation: slideInUp 0.5s ease-out forwards; }
+    .animate-fade-in-up { animation: slideInUp 0.3s ease-out forwards; }
+    @keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .animate-spin-slow { animation: spin-slow 20s linear infinite; }
+
+
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--bg-tertiary); }
+    ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #555; }
+
+    /* Login Page Specific Styles for Planets */
+    .planet {
+        position: absolute;
+        width: var(--size);
+        height: var(--size);
+        border-radius: 50%;
+        background-color: var(--color);
+        box-shadow: 0 0 calc(var(--size) / 4) var(--color), inset 0 0 calc(var(--size) / 5) rgba(255, 255, 255, 0.2);
+        top: var(--y);
+        left: var(--x);
+        animation: float var(--duration) infinite ease-in-out alternate;
+        transition: transform 0.2s ease-out, background-color 0.2s ease-out;
+        cursor: pointer;
+
+        /* Define indigo colors that are used in Login.tsx inline styles */
+        --indigo-600: #4f46e5;
+        --indigo-500: #6366f1;
+        --indigo-400: #818cf8;
+    }
+    @keyframes float {
+        from { transform: translate(-10px, -10px); }
+        to { transform: translate(10px, 10px); }
+    }
+    .planet:hover {
+        transform: scale(1.15) translate(var(--hover-dx, 5px), var(--hover-dy, -5px));
+        box-shadow: 0 0 calc(var(--size) / 3) var(--color), inset 0 0 calc(var(--size) / 4) rgba(255, 255, 255, 0.3);
+    }
+    .planet:active {
+        transform: scale(0.9);
+        transition-duration: 0.1s; /* Faster bounce back */
+    }
+
+    #stars {
+        background-image:
+            radial-gradient(1px 1px at 20% 30%, #e0e0ff, transparent),
+            radial-gradient(1px 1px at 80% 10%, #e0e0ff, transparent),
+            radial-gradient(1px 1px at 50% 50%, #e0e0ff, transparent),
+            radial-gradient(2px 2px at 30% 70%, #a0a0c0, transparent),
+            radial-gradient(2px 2px at 90% 60%, #a0a0c0, transparent),
+            radial-gradient(1px 1px at 10% 90%, #e0e0ff, transparent);
+        background-repeat: repeat;
+        background-size: 300px 300px;
+        position: absolute;
+        inset: 0;
+        opacity: 0.8;
+        animation: twinkle 10s infinite linear;
+    }
+    @keyframes twinkle {
+        from { background-position: 0 0; }
+        to { background-position: -300px 300px; }
+    }
+
+    .comet {
+        position: absolute;
+        width: 4px;
+        height: 4px;
+        background-color: #e0e0ff;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #e0e0ff;
+        animation: shoot 8s infinite linear;
+        top: var(--y-start, 20vh);
+        left: var(--x-start, -20vw);
+    }
+    .comet::after {
+        content: '';
+        position: absolute;
+        width: 150px;
+        height: 2px;
+        background: linear-gradient(to right, #e0e0ff, transparent);
+        transform: translateY(1px) translateX(-150px);
+    }
+    @keyframes shoot {
+        0% { transform: translate(var(--x-start), var(--y-start)) rotate(-30deg); opacity: 1; }
+        100% { transform: translate(calc(var(--x-start) + 150vw), calc(var(--y-start) + 30vh)) rotate(-30deg); opacity: 0; }
+    }
+</style>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
