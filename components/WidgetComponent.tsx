@@ -12,6 +12,7 @@ interface WidgetComponentProps {
     pageBounds: DOMRect | undefined;
     otherWidgets: WidgetInstance[];
     setAlignmentGuides: (guides: { vertical: number[], horizontal: number[] }) => void;
+    bypassTruncation?: boolean; // New prop
 }
 
 const getNestedValue = (obj: any, path: string): any => {
@@ -20,7 +21,7 @@ const getNestedValue = (obj: any, path: string): any => {
 };
 
 // Hook to resolve properties by checking bindings first, then falling back to static props.
-const useResolvedWidget = (widget: WidgetInstance, jsonDataString: string) => {
+const useResolvedWidget = (widget: WidgetInstance, jsonDataString: string, bypassTruncation: boolean = false) => {
     return useMemo(() => {
         try {
             const jsonData = JSON.parse(jsonDataString || '{}');
@@ -31,10 +32,10 @@ const useResolvedWidget = (widget: WidgetInstance, jsonDataString: string) => {
                 let value = getNestedValue(jsonData, dataPath);
 
                 if (value !== undefined) {
-                    // Truncate large arrays in editor for performance
-                    if ((key === 'props.tableData' || key === 'props.content') && Array.isArray(value) && value.length > 10) {
-                         value = value.slice(0, 10);
-                         resolvedWidget.props.isTruncated = true; // Flag for UI hint
+                    // Truncate large arrays in editor for performance, UNLESS bypassing
+                    if (!bypassTruncation && (key === 'props.tableData' || key === 'props.content') && Array.isArray(value) && value.length > 10) {
+                        value = value.slice(0, 10);
+                        resolvedWidget.props.isTruncated = true; // Flag for UI hint
                     }
 
                     const propPath = key.split('.');
@@ -50,7 +51,7 @@ const useResolvedWidget = (widget: WidgetInstance, jsonDataString: string) => {
             console.error("Error parsing JSON data in useResolvedWidget:", e);
             return widget;
         }
-    }, [widget, jsonDataString]);
+    }, [widget, jsonDataString, bypassTruncation]);
 };
 
 export const getBindableProperties = (type: WidgetInstance['type']): { property: string; label: string }[] => {
@@ -79,7 +80,7 @@ export const getBindableProperties = (type: WidgetInstance['type']): { property:
         case 'Table':
             return [{ property: 'props.tableData', label: 'Datos de Tabla' }];
         case 'List':
-             return [{ property: 'props.content', label: 'Elementos de la Lista' }];
+            return [{ property: 'props.content', label: 'Elementos de la Lista' }];
         case 'Rectangle':
         case 'Circle':
         case 'Triangle':
@@ -156,10 +157,10 @@ const TableResizer: React.FC<{
             const dx = moveEvent.clientX - startX;
             const newLeftWidth = Math.max(20, leftColInitialWidth + dx);
             const newRightWidth = Math.max(20, rightColInitialWidth - dx);
-            
+
             const newWidths = [...initialWidths];
             newWidths[index] = newLeftWidth;
-            newWidths[index+1] = newRightWidth;
+            newWidths[index + 1] = newRightWidth;
 
             const totalWidth = newWidths.reduce((a, b) => a + b, 0);
             onUpdate({ props: { ...props, colWidths: newWidths }, width: totalWidth });
@@ -172,7 +173,7 @@ const TableResizer: React.FC<{
         window.addEventListener('mousemove', handleMouseMove);
         window.addEventListener('mouseup', handleMouseUp);
     };
-    
+
     const handleRowResize = (e: React.MouseEvent, index: number) => {
         e.preventDefault();
         e.stopPropagation();
@@ -185,10 +186,10 @@ const TableResizer: React.FC<{
         const handleMouseMove = (moveEvent: MouseEvent) => {
             const dy = moveEvent.clientY - startY;
             const newHeight = Math.max(20, rowInitialHeight + dy);
-            
-            const newHeights: (number|'auto')[] = [...initialHeights];
+
+            const newHeights: (number | 'auto')[] = [...initialHeights];
             // fill up to index if sparse
-            if(tbodyRows) {
+            if (tbodyRows) {
                 for (let i = 0; i <= index; i++) {
                     if (newHeights[i] === undefined || newHeights[i] === 'auto') {
                         newHeights[i] = (tbodyRows[i] as HTMLElement).offsetHeight;
@@ -196,7 +197,7 @@ const TableResizer: React.FC<{
                 }
             }
             newHeights[index] = newHeight;
-            onUpdate({ props: { ...props, rowHeights: newHeights }});
+            onUpdate({ props: { ...props, rowHeights: newHeights } });
         };
 
         const handleMouseUp = () => {
@@ -214,7 +215,7 @@ const TableResizer: React.FC<{
                     className="absolute top-0 h-full w-1.5 -translate-x-1/2 cursor-col-resize pointer-events-auto hover:bg-indigo-500/50"
                     style={{ left: `${left}px` }} />
             ))}
-             {rowLines.map((top, i) => (
+            {rowLines.map((top, i) => (
                 <div key={`r-${i}`} onMouseDown={(e) => handleRowResize(e, i)}
                     className="absolute left-0 w-full h-1.5 -translate-y-1/2 cursor-row-resize pointer-events-auto hover:bg-indigo-500/50"
                     style={{ top: `${top}px` }} />
@@ -235,9 +236,9 @@ const WidgetRenderer: React.FC<{
     tableRef: React.RefObject<HTMLTableElement>; // Ref for table content
 }> = ({ widget, onUpdate, jsonData, isDraggingWidget, isResizingWidget, setMinContentHeight, contentRef, tableRef }) => {
     const { props, style } = widget;
-    
+
     const textContent = getNestedValue(jsonData, widget.bindings['props.content']) || (typeof props.content === 'string' ? props.content : '');
-    const textElement = props.link 
+    const textElement = props.link
         ? <a href={props.link} target="_blank" rel="noopener noreferrer">{textContent}</a>
         : <>{textContent}</>;
 
@@ -264,7 +265,7 @@ const WidgetRenderer: React.FC<{
         } else if (isTableWidget && tableRef.current) {
             observer.current.observe(tableRef.current);
         }
-        
+
         return () => {
             if (contentRef.current) {
                 observer.current.unobserve(contentRef.current);
@@ -289,22 +290,22 @@ const WidgetRenderer: React.FC<{
         case 'List':
             return <div ref={contentRef as any} className="w-full p-1 box-border" style={style}><ListRenderer items={Array.isArray(props.content) ? props.content : []} jsonData={jsonData} /></div>;
         case 'Image':
-            return <img src={props.src || 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs='} alt="Image" className="w-full h-full" style={{...style, pointerEvents: 'none'}} />;
+            return <img src={props.src || 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs='} alt="Image" className="w-full h-full" style={{ ...style, pointerEvents: 'none' }} />;
         case 'QR Code':
             return <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(props.data || '')}`} alt="QR Code" className="w-full h-full" style={{ pointerEvents: 'none' }} />;
         case 'Rectangle':
         case 'Circle':
             return <div className="w-full h-full" style={style} />;
         case 'Triangle':
-            return <div className="w-full h-full" style={{...style, clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)'}} />;
+            return <div className="w-full h-full" style={{ ...style, clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' }} />;
         case 'Arrow':
-             return (
+            return (
                 <svg width="100%" height="100%" viewBox="0 0 100 40" preserveAspectRatio="none">
-                    <polygon points="0,15 70,15 70,0 100,20 70,40 70,25 0,25" 
-                        style={{ 
-                            fill: style.backgroundColor, 
-                            stroke: style.borderColor, 
-                            strokeWidth: style.borderWidth 
+                    <polygon points="0,15 70,15 70,0 100,20 70,40 70,25 0,25"
+                        style={{
+                            fill: style.backgroundColor,
+                            stroke: style.borderColor,
+                            strokeWidth: style.borderWidth
                         }} />
                 </svg>
             );
@@ -315,7 +316,7 @@ const WidgetRenderer: React.FC<{
             const checkboxLabel = props.label || ''; // props.label is already resolved by useResolvedWidget
 
             return (
-                <div style={{...style, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ ...style, display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{
                         width: `${boxSize}px`,
                         height: `${boxSize}px`,
@@ -341,7 +342,7 @@ const WidgetRenderer: React.FC<{
         case 'Table': {
             const [editingCell, setEditingCell] = useState<{ type: 'header' | 'body', row: number, col: number } | null>(null);
             const tableMode = props.tableMode || 'static';
-            
+
             const handleCellUpdate = (newValue: string) => {
                 if (!editingCell) return;
                 const currentData = (props.tableData || []) as string[][];
@@ -377,7 +378,7 @@ const WidgetRenderer: React.FC<{
 
             const colCount = headers.length;
             const colWidths = props.colWidths || Array(colCount).fill(widget.width / colCount);
-            
+
             const cellContent = (type: 'header' | 'body', content: string, r: number, c: number) => {
                 if (editingCell && editingCell.type === type && editingCell.row === r && editingCell.col === c) {
                     return (
@@ -400,20 +401,20 @@ const WidgetRenderer: React.FC<{
             return (
                 <div className="w-full h-full relative">
                     {props.isTruncated && <div className="absolute bottom-0 w-full text-center text-xs bg-indigo-500/20 text-indigo-800 p-1 z-10">Vista previa - la tabla completa se mostrará en el PDF</div>}
-                    <table ref={tableRef as any} className="w-full border-collapse text-sm" style={{...style, tableLayout: 'fixed'}}>
+                    <table ref={tableRef as any} className="w-full border-collapse text-sm" style={{ ...style, tableLayout: 'fixed' }}>
                         <colgroup>
-                            {colWidths.map((width, i) => <col key={i} style={{width: `${width}px`}} />)}
+                            {colWidths.map((width, i) => <col key={i} style={{ width: `${width}px` }} />)}
                         </colgroup>
                         <thead>
                             <tr style={props.headerStyle}>
-                                {headers.map((header, cIdx) => 
-                                <th key={cIdx} 
-                                    className="p-2 border font-bold break-words relative"
-                                    style={{borderColor: style.borderColor}}
-                                    onDoubleClick={() => tableMode === 'static' && setEditingCell({ type: 'header', row: 0, col: cIdx })}
-                                >
-                                    {cellContent('header', header, 0, cIdx)}
-                                </th>)}
+                                {headers.map((header, cIdx) =>
+                                    <th key={cIdx}
+                                        className="p-2 border font-bold break-words relative"
+                                        style={{ borderColor: style.borderColor }}
+                                        onDoubleClick={() => tableMode === 'static' && setEditingCell({ type: 'header', row: 0, col: cIdx })}
+                                    >
+                                        {cellContent('header', header, 0, cIdx)}
+                                    </th>)}
                             </tr>
                         </thead>
                         <tbody>
@@ -423,18 +424,18 @@ const WidgetRenderer: React.FC<{
                                     height: `${(props.rowHeights || [])[rIdx] || 'auto'}px`,
                                 }}>
                                     {row.map((cell, cIdx) => (
-                                         <td key={cIdx} 
-                                            className="p-2 border break-words relative" 
-                                            style={{borderColor: style.borderColor}}
+                                        <td key={cIdx}
+                                            className="p-2 border break-words relative"
+                                            style={{ borderColor: style.borderColor }}
                                             onDoubleClick={() => tableMode === 'static' && setEditingCell({ type: 'body', row: rIdx, col: cIdx })}
-                                         >
+                                        >
                                             {cellContent('body', String(cell || ''), rIdx, cIdx)}
-                                         </td>
+                                        </td>
                                     ))}
                                 </tr>
                             )) : tableMode === 'dynamic' ? (
                                 <tr>
-                                    <td colSpan={headers.length || 1} className="p-4 text-center text-xs text-subtle italic border" style={{borderColor: style.borderColor}}>
+                                    <td colSpan={headers.length || 1} className="p-4 text-center text-xs text-subtle italic border" style={{ borderColor: style.borderColor }}>
                                         Tabla dinámica vinculada. El array de datos está vacío.
                                     </td>
                                 </tr>
@@ -450,18 +451,16 @@ const WidgetRenderer: React.FC<{
 };
 
 const WidgetComponent: React.FC<WidgetComponentProps> = (props) => {
-    const { widget, jsonData, onUpdate, onSelect, isSelected, onRightClick, pageBounds, otherWidgets, setAlignmentGuides } = props;
+    const { widget, jsonData, onUpdate, onSelect, isSelected, onRightClick, pageBounds, otherWidgets, setAlignmentGuides, bypassTruncation } = props;
     const ref = useRef<HTMLDivElement>(null);
     const contentRef = useRef<HTMLElement>(null); // Ref for text/list content
     const tableRef = useRef<HTMLTableElement>(null); // Ref for table content
-
-    // State to track the intrinsic height of the content (what it needs to display without overflow)
     const [minContentHeight, setMinContentHeight] = useState(widget.height);
     const [isDraggingWidget, setIsDraggingWidget] = useState(false);
     const [isResizingWidget, setIsResizingWidget] = useState(false);
 
-    const resolvedWidget = useResolvedWidget(widget, jsonData);
-    
+    const resolvedWidget = useResolvedWidget(widget, jsonData, bypassTruncation);
+
     const jsonDataObject = useMemo(() => {
         try { return JSON.parse(jsonData || '{}'); }
         catch { return {}; }
@@ -470,7 +469,7 @@ const WidgetComponent: React.FC<WidgetComponentProps> = (props) => {
     // Recalculate minContentHeight if widget content or width changes
     useEffect(() => {
         if (!['Title', 'Subtitle', 'Text', 'Styled Paragraph', 'List', 'Index', 'Table'].includes(widget.type)) {
-            setMinContentHeight(widget.height); 
+            setMinContentHeight(widget.height);
         }
     }, [widget.id, widget.props, widget.width, widget.type]);
 
@@ -485,7 +484,7 @@ const WidgetComponent: React.FC<WidgetComponentProps> = (props) => {
         e.stopPropagation();
         onSelect(widget.id);
         setIsDraggingWidget(true);
-        
+
         const startPos = { x: e.clientX, y: e.clientY };
         const startWidgetPos = { x: widget.x, y: widget.y };
 
@@ -507,7 +506,7 @@ const WidgetComponent: React.FC<WidgetComponentProps> = (props) => {
             let snappedY = false;
 
             const allOtherGeoms = [
-                 { v: [0, pageBounds ? pageBounds.width / 2 : 408, pageBounds ? pageBounds.width : 816], h: [0, pageBounds ? pageBounds.height / 2 : 528, pageBounds ? pageBounds.height : 1056] },
+                { v: [0, pageBounds ? pageBounds.width / 2 : 408, pageBounds ? pageBounds.width : 816], h: [0, pageBounds ? pageBounds.height / 2 : 528, pageBounds ? pageBounds.height : 1056] },
                 ...otherWidgets.map(other => ({
                     v: [other.x, other.x + other.width / 2, other.x + other.width],
                     h: [other.y, other.y + other.height / 2, other.y + other.height]
@@ -541,7 +540,7 @@ const WidgetComponent: React.FC<WidgetComponentProps> = (props) => {
                 }
                 if (snappedX && snappedY) break;
             }
-            
+
             setAlignmentGuides(newGuides);
 
             if (pageBounds) {
@@ -580,7 +579,7 @@ const WidgetComponent: React.FC<WidgetComponentProps> = (props) => {
             const SNAP_THRESHOLD = 5;
             const dx = moveEvent.clientX - startPos.x;
             const dy = moveEvent.clientY - startPos.y;
-            
+
             let newWidth = startSize.width + dx;
             let newHeight = startSize.height + dy;
 
@@ -590,13 +589,13 @@ const WidgetComponent: React.FC<WidgetComponentProps> = (props) => {
 
             const allOtherGeoms = [
                 { v: [0, pageBounds ? pageBounds.width / 2 : 408, pageBounds ? pageBounds.width : 816], h: [0, pageBounds ? pageBounds.height / 2 : 528, pageBounds ? pageBounds.height : 1056] },
-               ...otherWidgets.map(other => ({
-                   v: [other.x, other.x + other.width / 2, other.x + other.width],
-                   h: [other.y, other.y + other.height / 2, other.y + other.height]
-               }))
-           ];
+                ...otherWidgets.map(other => ({
+                    v: [other.x, other.x + other.width / 2, other.x + other.width],
+                    h: [other.y, other.y + other.height / 2, other.y + other.height]
+                }))
+            ];
 
-           for (const otherGeom of allOtherGeoms) {
+            for (const otherGeom of allOtherGeoms) {
                 if (!snappedX) {
                     for (const otherPoint of otherGeom.v) {
                         if (Math.abs(activeGeom.right - otherPoint) < SNAP_THRESHOLD) {
@@ -677,12 +676,12 @@ const WidgetComponent: React.FC<WidgetComponentProps> = (props) => {
             />
             {isSelected && (
                 <>
-                 {widget.type === 'Table' && (widget.props.tableMode || 'static') === 'static' && <TableResizer widget={widget} tableRef={tableRef} onUpdate={(p) => handleUpdate(p)} isResizingWidget={isResizingWidget} />}
-                 <div
-                    onMouseDown={handleResizeMouseDown}
-                    className="absolute -bottom-1 -right-1 w-3 h-3 bg-indigo-600 border-2 border-panel rounded-full cursor-nwse-resize z-10"
-                    data-resizer="true"
-                />
+                    {widget.type === 'Table' && (widget.props.tableMode || 'static') === 'static' && <TableResizer widget={widget} tableRef={tableRef} onUpdate={(p) => handleUpdate(p)} isResizingWidget={isResizingWidget} />}
+                    <div
+                        onMouseDown={handleResizeMouseDown}
+                        className="absolute -bottom-1 -right-1 w-3 h-3 bg-indigo-600 border-2 border-panel rounded-full cursor-nwse-resize z-10"
+                        data-resizer="true"
+                    />
                 </>
             )}
         </div>

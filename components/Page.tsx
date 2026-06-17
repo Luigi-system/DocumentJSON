@@ -24,12 +24,13 @@ interface PageProps {
     editorZoom: number; // New prop for scaling overlays
     alignmentGuides: { vertical: number[], horizontal: number[] };
     setAlignmentGuides: (guides: { vertical: number[], horizontal: number[] }) => void;
+    bypassTruncation?: boolean; // New prop
 }
 
 const Page: React.FC<PageProps> = (props) => {
     const pageRef = React.useRef<HTMLDivElement>(null);
     const { properties, widgets } = props.pageData;
-    const { alignmentGuides, setAlignmentGuides } = props;
+    const { alignmentGuides, setAlignmentGuides, bypassTruncation } = props;
     const isLandscape = properties.orientation === 'Landscape';
 
     const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
@@ -40,7 +41,7 @@ const Page: React.FC<PageProps> = (props) => {
         try {
             const widgetData = JSON.parse(widgetDataString);
             const pageRect = pageRef.current.getBoundingClientRect();
-            
+
             const x = event.clientX - pageRect.left;
             const y = event.clientY - pageRect.top;
 
@@ -65,7 +66,7 @@ const Page: React.FC<PageProps> = (props) => {
 
     const handlePageClick = (e: React.MouseEvent) => {
         props.onSetActivePage(props.pageIndex);
-        
+
         if (e.target === pageRef.current) {
             props.onSelectWidget(null);
         }
@@ -75,7 +76,7 @@ const Page: React.FC<PageProps> = (props) => {
         opacity: properties.watermark.opacity,
         transform: `translate(-50%, -50%) rotate(${properties.watermark.angle}deg)`,
     };
-    
+
     return (
         <div
             ref={pageRef}
@@ -83,7 +84,7 @@ const Page: React.FC<PageProps> = (props) => {
             onDragOver={handleDragOver}
             onClick={handlePageClick}
             onContextMenu={(e) => props.onPageRightClick(e, props.pageIndex)}
-            className={`shadow-lg relative overflow-hidden transition-all duration-200 ${props.isActive ? 'ring-2 ring-indigo-500 ring-offset-4 ring-offset-editor-canvas' : ''}`}
+            className={`page shadow-lg relative overflow-hidden transition-all duration-200 ${props.isActive ? 'ring-2 ring-indigo-500 ring-offset-4 ring-offset-editor-canvas' : ''}`}
             style={{
                 width: isLandscape ? '11in' : '8.5in',
                 height: isLandscape ? '8.5in' : '11in',
@@ -92,14 +93,16 @@ const Page: React.FC<PageProps> = (props) => {
                 MozUserSelect: 'none', // Firefox
                 WebkitUserSelect: 'none', // Chrome, Safari
                 msUserSelect: 'none', // IE/Edge
+                pageBreakAfter: 'always', // Ensure PDF splits correctly
+                breakAfter: 'page' // Modern syntax
             }}
         >
-             {properties.watermark.enabled && (
+            {properties.watermark.enabled && (
                 properties.watermark.type === 'Image' && properties.watermark.src ? (
-                    <img 
-                        src={properties.watermark.src} 
-                        alt="Watermark" 
-                        className="page-watermark" 
+                    <img
+                        src={properties.watermark.src}
+                        alt="Watermark"
+                        className="page-watermark"
                         style={{
                             ...watermarkBaseStyle,
                             maxWidth: '80%',
@@ -126,12 +129,12 @@ const Page: React.FC<PageProps> = (props) => {
                     {properties.header.text}
                 </div>
             )}
-             {properties.pagination.enabled && (
+            {properties.pagination.enabled && (
                 <div className="page-footer" style={{ transform: `scale(${1 / props.editorZoom})`, transformOrigin: 'bottom center' }}>
                     Página {props.pageNumber} de {props.totalPages}
                 </div>
             )}
-             {/* Render Alignment Guides */}
+            {/* Render Alignment Guides */}
             {alignmentGuides.vertical.map((guideX, index) => (
                 <div key={`v-${index}`} className="absolute bg-red-500 z-20" style={{ left: guideX, top: 0, width: '1px', height: '100%', pointerEvents: 'none' }} />
             ))}
@@ -151,6 +154,7 @@ const Page: React.FC<PageProps> = (props) => {
                     pageBounds={pageRef.current?.getBoundingClientRect()}
                     otherWidgets={widgets.filter(w => w.id !== widget.id)}
                     setAlignmentGuides={setAlignmentGuides}
+                    bypassTruncation={bypassTruncation}
                 />
             ))}
         </div>

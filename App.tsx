@@ -25,6 +25,8 @@ import { templates as PREDEFINED_TEMPLATES } from './templates';
 import { v4 as uuidv4 } from 'uuid';
 import { getBindableProperties } from './components/WidgetComponent';
 import { supabase } from './services/supabaseClient';
+import { io } from 'socket.io-client';
+import { paginateTemplate } from './services/paginationService';
 
 
 const App: React.FC = () => {
@@ -59,8 +61,95 @@ const App: React.FC = () => {
         }
     });
 
+    // --- Webhook / Socket.IO Integration ---
+    useEffect(() => {
+        const socket = io('http://localhost:3001');
 
-    // UI state
+        socket.on('connect', () => {
+            console.log('Connected to Webhook Server');
+        });
+
+        socket.on('webhook-update', (payload: { templateId: string, data: any }) => {
+            console.log('Webhook Data Received:', payload);
+            if (activeTemplate && activeTemplate.id === payload.templateId) {
+                // Update current template json data
+                const newDataProp = JSON.stringify(payload.data, null, 2);
+
+                // Optimization: Only update if different
+                // Optimization: Only update if different
+                setActiveTemplate(prev => {
+                    if (!prev) return null;
+                    const updatedTemplate = {
+                        ...prev,
+                        jsonData: newDataProp
+                    };
+                    // Apply pagination logic
+                    return paginateTemplate(updatedTemplate);
+                });
+
+                alert("¡Datos recibidos del Webhook! La plantilla se ha actualizado.");
+            }
+        });
+
+        return () => {
+            socket.disconnect();
+        };
+    }, [activeTemplate?.id]);
+
+
+
+
+    // --- Render Mode Logic (for Puppeteer) ---
+    const [isRenderMode, setIsRenderMode] = useState(false);
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const mode = params.get('mode');
+        const templateId = params.get('templateId');
+
+        if (mode === 'render' && templateId) {
+            setIsRenderMode(true);
+            setView('editor');
+
+            // Attempt to load the template immediately from DB or wait for templates to load
+            // Since templates loading is async in another useEffect, we might need to wait or rely on templates state change
+            // For simplicity, we'll try to find it in the `templates` array when it updates
+
+            // Also listen for direct data injection from Puppeteer
+            const handleMessage = (event: MessageEvent) => {
+                if (event.data && event.data.type === 'INJECT_DATA') {
+                    console.log('Received injected data:', event.data.payload);
+                    const injectedData = event.data.payload;
+                    setActiveTemplate(prev => {
+                        if (!prev) return null;
+                        const updatedTemplate = {
+                            ...prev,
+                            jsonData: JSON.stringify(injectedData, null, 2)
+                        };
+                        return paginateTemplate(updatedTemplate);
+                    });
+                }
+            };
+            window.addEventListener('message', handleMessage);
+            return () => window.removeEventListener('message', handleMessage);
+        }
+    }, []);
+
+    // Effect to select template in render mode once templates are loaded
+    useEffect(() => {
+        if (isRenderMode && templates.length > 0 && !activeTemplate) {
+            const params = new URLSearchParams(window.location.search);
+            const templateId = params.get('templateId');
+            if (templateId) {
+                const found = templates.find(t => t.id === templateId);
+                if (found) {
+                    setActiveTemplate(JSON.parse(JSON.stringify(found)));
+                }
+            }
+        }
+    }, [isRenderMode, templates, activeTemplate]);
+
+    // --- Webhook / Socket.IO Integration ---
     const [rightPanelMode, setRightPanelMode] = useState<'widgets' | 'widgetProperties' | 'pageProperties'>('widgets');
     const [contextMenu, setContextMenu] = useState<{ x: number, y: number, type: 'widget' | 'page', pageIndex?: number, widget?: WidgetInstance } | null>(null);
     const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
@@ -117,7 +206,7 @@ const App: React.FC = () => {
         try {
             const savedUser = localStorage.getItem('docugen-user');
             const savedWebhookUrl = localStorage.getItem('docugen-webhookUrl');
-            
+
             if (savedUser) {
                 setUser(JSON.parse(savedUser));
             } else {
@@ -138,7 +227,7 @@ const App: React.FC = () => {
         }
     }, [user]);
 
-     useEffect(() => {
+    useEffect(() => {
         localStorage.setItem('docugen-webhookUrl', JSON.stringify(webhookUrl));
     }, [webhookUrl]);
 
@@ -188,14 +277,14 @@ const App: React.FC = () => {
         }
 
         const lines = actualContent.split('\n').length;
-        const averageCharWidth = fontSize * 0.6; 
+        const averageCharWidth = fontSize * 0.6;
         const estimatedCharsPerLine = Math.floor(width / averageCharWidth);
-        
+
         let wrappingLines = 0;
         if (estimatedCharsPerLine > 0) {
             wrappingLines = Math.ceil(actualContent.length / estimatedCharsPerLine);
         }
-        
+
         const totalLines = Math.max(lines, wrappingLines);
 
         switch (type) {
@@ -247,7 +336,7 @@ const App: React.FC = () => {
             jsonData: '{}',
             status: 'active',
         };
-        
+
         // Optimistic UI update
         setTemplates(t => [newTemplate, ...t]);
         handleSelectTemplate(newTemplate.id);
@@ -256,7 +345,7 @@ const App: React.FC = () => {
         const { error } = await supabase
             .from('templates')
             .insert([{ ...newTemplate, jsonData: JSON.parse(newTemplate.jsonData) }]);
-        
+
         if (error) {
             console.error("Error creating template:", error.message, error);
             alert("Failed to save new template to database.");
@@ -287,7 +376,7 @@ const App: React.FC = () => {
                 pages: activeTemplate.pages,
                 status: activeTemplate.status,
                 jsonData: JSON.parse(activeTemplate.jsonData)
-             })
+            })
             .eq('id', activeTemplate.id);
 
         if (error) {
@@ -298,7 +387,7 @@ const App: React.FC = () => {
             alert('¡Plantilla actualizada!');
         }
     };
-    
+
     // --- Template Management Handlers ---
     const handleRenameTemplate = async (id: string, newName: string) => {
         const originalName = templates.find(t => t.id === id)?.name;
@@ -342,7 +431,7 @@ const App: React.FC = () => {
             .from('templates')
             .update({ status: 'archived' })
             .eq('id', id);
-        
+
         if (error) {
             console.error("Error archiving template:", error.message, error);
             alert("Failed to archive template.");
@@ -357,7 +446,7 @@ const App: React.FC = () => {
             .from('templates')
             .update({ status: 'active' })
             .eq('id', id);
-        
+
         if (error) {
             console.error("Error restoring template:", error.message, error);
             alert("Failed to restore template.");
@@ -366,7 +455,7 @@ const App: React.FC = () => {
     };
 
     const handleDeleteTemplate = useCallback(async (id: string) => {
-        if(window.confirm('¿Estás seguro de que quieres eliminar esta plantilla permanentemente? Esta acción no se puede rehacer.')) {
+        if (window.confirm('¿Estás seguro de que quieres eliminar esta plantilla permanentemente? Esta acción no se puede rehacer.')) {
             const originalTemplates = [...templates];
             setTemplates(prevTemplates => prevTemplates.filter(t => t.id !== id)); // Optimistic
 
@@ -457,21 +546,21 @@ const App: React.FC = () => {
 
 
         const calculatedHeight = calculateInitialTextWidgetHeight(
-            widget.type, 
-            widget.props?.content, 
-            initialWidth, 
+            widget.type,
+            widget.props?.content,
+            initialWidth,
             widget.style?.fontSize
         );
 
-        const newWidget: WidgetInstance = { 
-            ...widget, 
-            id: uuidv4(), 
-            x: widget.x, 
-            y: widget.y, 
-            width: initialWidth, 
-            height: calculatedHeight, 
-            bindings: {}, 
-            props: widget.props || {}, 
+        const newWidget: WidgetInstance = {
+            ...widget,
+            id: uuidv4(),
+            x: widget.x,
+            y: widget.y,
+            width: initialWidth,
+            height: calculatedHeight,
+            bindings: {},
+            props: widget.props || {},
             style: widget.style || {},
         };
         // Fix: Replaced updateActiveTemplate with setActiveTemplate
@@ -483,7 +572,7 @@ const App: React.FC = () => {
         });
         handleSelectWidget(newWidget.id);
     };
-    
+
     const updateWidget = (widgetId: string, newProps: Partial<WidgetInstance>) => {
         // Fix: Replaced updateActiveTemplate with setActiveTemplate
         setActiveTemplate(template => {
@@ -492,7 +581,7 @@ const App: React.FC = () => {
                 ...template,
                 pages: template.pages.map(page => ({
                     ...page,
-                    widgets: page.widgets.map(widget => 
+                    widgets: page.widgets.map(widget =>
                         widget.id === widgetId ? { ...widget, ...newProps, style: { ...widget.style, ...(newProps.style || {}) }, props: { ...widget.props, ...(newProps.props || {}) }, bindings: { ...widget.bindings, ...(newProps.bindings || {}) } } : widget
                     )
                 }))
@@ -514,7 +603,7 @@ const App: React.FC = () => {
                 if (!template) return template;
                 const newPages = [...template.pages];
                 const currentPage = newPages[activePageIndex];
-                
+
                 const newWidget: WidgetInstance = {
                     ...copiedWidget,
                     id: uuidv4(),
@@ -535,7 +624,7 @@ const App: React.FC = () => {
                 if (!template) return template;
                 const newPages = [...template.pages];
                 const currentPage = newPages[activePageIndex];
-                
+
                 const newWidget: WidgetInstance = {
                     ...selectedWidget,
                     id: uuidv4(),
@@ -603,7 +692,7 @@ const App: React.FC = () => {
             return { ...template, pages: newPages };
         });
     };
-  
+
     const applyPropertiesToAllPages = (propertiesToApply: PageProperties) => {
         // Fix: Replaced updateActiveTemplate with setActiveTemplate
         setActiveTemplate(template => {
@@ -618,11 +707,11 @@ const App: React.FC = () => {
     // --- UI Handlers ---
 
     const handlePageRightClick = (e: React.MouseEvent, pageIndex: number) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setContextMenu({ x: e.clientX, y: e.clientY, type: 'page', pageIndex });
+        e.preventDefault();
+        e.stopPropagation();
+        setContextMenu({ x: e.clientX, y: e.clientY, type: 'page', pageIndex });
     };
-  
+
     const handleWidgetRightClick = (e: React.MouseEvent, widget: WidgetInstance) => {
         e.preventDefault();
         e.stopPropagation();
@@ -630,26 +719,26 @@ const App: React.FC = () => {
     };
 
     const handleSelectWidget = (widgetId: string | null) => {
-      setSelectedWidgetId(widgetId);
-      setRightPanelMode(widgetId ? 'widgetProperties' : 'widgets');
+        setSelectedWidgetId(widgetId);
+        setRightPanelMode(widgetId ? 'widgetProperties' : 'widgets');
     };
-  
+
     const handleDeselect = useCallback(() => {
         setSelectedWidgetId(null);
         setRightPanelMode('widgets');
     }, []);
 
     const handleShowPageProperties = (pageIndex: number) => {
-      setActivePageIndex(pageIndex);
-      setRightPanelMode('pageProperties');
-      setContextMenu(null);
+        setActivePageIndex(pageIndex);
+        setRightPanelMode('pageProperties');
+        setContextMenu(null);
     };
-  
+
     const handleShowWidgetProperties = (widgetId: string) => {
-      handleSelectWidget(widgetId);
-      setContextMenu(null);
+        handleSelectWidget(widgetId);
+        setContextMenu(null);
     }
-    
+
     const handleDataBinding = (widgetId: string, binding: WidgetBinding) => {
         // Fix: Replaced updateActiveTemplate with setActiveTemplate
         setActiveTemplate(template => {
@@ -658,7 +747,7 @@ const App: React.FC = () => {
                 ...template,
                 pages: template.pages.map(page => ({
                     ...page,
-                    widgets: page.widgets.map(widget => 
+                    widgets: page.widgets.map(widget =>
                         widget.id === widgetId ? { ...widget, bindings: { ...widget.bindings, [binding.property]: binding.dataPath } } : widget
                     )
                 }))
@@ -705,29 +794,29 @@ const App: React.FC = () => {
                 }
 
                 const newWidget: WidgetInstance = {
-                    id: uuidv4(), 
-                    x: 20, 
-                    y: yOffset, 
-                    width: initialWidth, 
-                    height: initialHeight, 
+                    id: uuidv4(),
+                    x: 20,
+                    y: yOffset,
+                    width: initialWidth,
+                    height: initialHeight,
                     bindings: {},
-                    ...widgetProps, 
-                    type: widgetProps.type, 
-                    props: widgetProps.props || {}, 
+                    ...widgetProps,
+                    type: widgetProps.type,
+                    props: widgetProps.props || {},
                     style: widgetProps.style || {},
                 };
                 newWidget.height = calculateInitialTextWidgetHeight(
-                    newWidget.type, 
-                    newWidget.props.content, 
-                    newWidget.width, 
+                    newWidget.type,
+                    newWidget.props.content,
+                    newWidget.width,
                     newWidget.style?.fontSize
                 );
-                
+
                 lastPage.widgets.push(newWidget);
                 yOffset += newWidget.height + 10;
             });
 
-            return {...template, pages: newPages};
+            return { ...template, pages: newPages };
         });
         setIsAiModalOpen(false);
     };
@@ -761,40 +850,40 @@ const App: React.FC = () => {
                                 case 'Text': initialHeight = 100; break;
                                 case 'Styled Paragraph': initialHeight = 120; break;
                                 case 'List': initialHeight = 100; break;
-                            case 'Image': initialHeight = 150; break;
-                            case 'QR Code': initialHeight = 100; break;
+                                case 'Image': initialHeight = 150; break;
+                                case 'QR Code': initialHeight = 100; break;
                                 default: initialHeight = 50; break;
                             }
                         }
 
-                     const newWidget: WidgetInstance = {
-                        id: uuidv4(), 
-                        x: widget.x || 50, 
-                        y: widget.y || 50, 
-                        width: initialWidth, 
-                        height: initialHeight, 
-                        ...widget,
-                        type: widget.type,
-                        bindings: widget.bindings || {},
-                        props: widget.props || {},
-                        style: widget.style || {},
-                    };
-                    newWidget.height = calculateInitialTextWidgetHeight(
-                        newWidget.type, 
-                        newWidget.props.content, 
-                        newWidget.width, 
-                        newWidget.style?.fontSize
-                    );
-                    acc.push(newWidget);
-                }
-                return acc;
-            }, []),
-        };
-        return { ...template, pages: [...template.pages, newPage]};
-    });
+                        const newWidget: WidgetInstance = {
+                            id: uuidv4(),
+                            x: widget.x || 50,
+                            y: widget.y || 50,
+                            width: initialWidth,
+                            height: initialHeight,
+                            ...widget,
+                            type: widget.type,
+                            bindings: widget.bindings || {},
+                            props: widget.props || {},
+                            style: widget.style || {},
+                        };
+                        newWidget.height = calculateInitialTextWidgetHeight(
+                            newWidget.type,
+                            newWidget.props.content,
+                            newWidget.width,
+                            newWidget.style?.fontSize
+                        );
+                        acc.push(newWidget);
+                    }
+                    return acc;
+                }, []),
+            };
+            return { ...template, pages: [...template.pages, newPage] };
+        });
         setIsAiModalOpen(false);
     };
-    
+
     const handleApplyProjectDocumentation = (docResult: ProjectDocumentation) => {
         setProjectDocumentation(docResult);
         const { widgets: docWidgets, config } = docResult;
@@ -802,7 +891,7 @@ const App: React.FC = () => {
         const PAGE_HEIGHT_LIMIT = 1000;
         const PAGE_MARGIN = 50;
         const CONTENT_WIDTH = PAGE_WIDTH - (PAGE_MARGIN * 2);
-        
+
         const pageProperties: PageProperties = {
             ...DEFAULT_PAGE_PROPERTIES,
             backgroundColor: config.colorPalette.background,
@@ -811,7 +900,7 @@ const App: React.FC = () => {
         const newPages: PageData[] = [];
         let currentPageWidgets: WidgetInstance[] = [];
         let yOffset = 50;
-    
+
         docWidgets.forEach(widget => {
             if (!widget.type) return;
 
@@ -842,22 +931,22 @@ const App: React.FC = () => {
             }
 
             const newWidget: WidgetInstance = {
-                id: uuidv4(), 
-                x: widget.x || PAGE_MARGIN, 
-                y: 0, 
-                width: initialWidth, 
-                height: initialHeight, 
-                ...widget, 
-                type: widget.type, 
-                bindings: widget.bindings || {}, 
-                props: widget.props || {}, 
+                id: uuidv4(),
+                x: widget.x || PAGE_MARGIN,
+                y: 0,
+                width: initialWidth,
+                height: initialHeight,
+                ...widget,
+                type: widget.type,
+                bindings: widget.bindings || {},
+                props: widget.props || {},
                 style: widget.style || {},
             };
-            
+
             newWidget.height = calculateInitialTextWidgetHeight(
-                newWidget.type, 
-                newWidget.props.content, 
-                newWidget.width, 
+                newWidget.type,
+                newWidget.props.content,
+                newWidget.width,
                 newWidget.style?.fontSize
             );
 
@@ -870,7 +959,7 @@ const App: React.FC = () => {
                 currentPageWidgets = [];
                 yOffset = 50;
             }
-    
+
             newWidget.y = yOffset;
             currentPageWidgets.push(newWidget);
             yOffset += newWidget.height + 20;
@@ -879,7 +968,7 @@ const App: React.FC = () => {
         if (currentPageWidgets.length > 0) {
             newPages.push({ id: uuidv4(), properties: pageProperties, widgets: currentPageWidgets });
         }
-    
+
         // Fix: Replaced updateActiveTemplate with setActiveTemplate
         setActiveTemplate(template => ({
             ...template,
@@ -896,36 +985,36 @@ const App: React.FC = () => {
 
     const handleRegenerateDocExplanation = (filePath: string, newExplanation: string) => {
         if (!projectDocumentation) return;
-    
+
         const fileSubtitleIndex = projectDocumentation.widgets.findIndex(
             w => w.type === 'Subtitle' && w.props?.content === filePath
         );
-    
+
         if (fileSubtitleIndex === -1 || fileSubtitleIndex + 2 >= projectDocumentation.widgets.length) {
             console.error("Could not find the widget to update for regeneration.");
             return;
         }
-    
+
         const explanationWidgetIndex = fileSubtitleIndex + 2;
         const newWidgets = [...projectDocumentation.widgets];
         const oldWidget = newWidgets[explanationWidgetIndex];
-        
-        if(oldWidget && (oldWidget.type === 'Text' || oldWidget.type === 'Styled Paragraph')) {
+
+        if (oldWidget && (oldWidget.type === 'Text' || oldWidget.type === 'Styled Paragraph')) {
             newWidgets[explanationWidgetIndex] = {
                 ...oldWidget,
                 props: { ...oldWidget.props, content: newExplanation }
             };
-    
+
             setProjectDocumentation({ ...projectDocumentation, widgets: newWidgets });
-            
-            if(isDocDetailModalOpen && docDetailContent?.title === filePath) {
-                setDocDetailContent(current => current ? {...current, explanation: newExplanation} : null);
+
+            if (isDocDetailModalOpen && docDetailContent?.title === filePath) {
+                setDocDetailContent(current => current ? { ...current, explanation: newExplanation } : null);
             }
         } else {
             console.error("Widget structure mismatch, could not regenerate explanation.");
         }
     };
-    
+
     // --- AI Text Generation Handlers ---
     const handleOpenAiTextModal = (widgetId: string) => {
         setTargetWidgetIdForAiText(widgetId);
@@ -934,12 +1023,12 @@ const App: React.FC = () => {
 
     const handleApplyAiGeneratedText = (text: string) => {
         if (targetWidgetIdForAiText) {
-            updateWidget(targetWidgetIdForAiText, { props: { content: text }});
+            updateWidget(targetWidgetIdForAiText, { props: { content: text } });
         }
         setIsAiTextModalOpen(false);
         setTargetWidgetIdForAiText(null);
     };
-    
+
     // --- Page AI Generation Handlers ---
     const handleOpenPageAiModal = (pageIndex: number) => {
         setTargetPageIndexForAi(pageIndex);
@@ -984,21 +1073,21 @@ const App: React.FC = () => {
                         }
                     }
                     const newWidget: WidgetInstance = {
-                        id: uuidv4(), 
-                        x: widget.x || PAGE_MARGIN, 
-                        y: yOffset, 
-                        width: initialWidth, 
-                        height: initialHeight, 
-                        ...widget, 
-                        type: widget.type, 
-                        bindings: widget.bindings || {}, 
-                        props: widget.props || {}, 
+                        id: uuidv4(),
+                        x: widget.x || PAGE_MARGIN,
+                        y: yOffset,
+                        width: initialWidth,
+                        height: initialHeight,
+                        ...widget,
+                        type: widget.type,
+                        bindings: widget.bindings || {},
+                        props: widget.props || {},
                         style: widget.style || {},
                     };
                     newWidget.height = calculateInitialTextWidgetHeight(
-                        newWidget.type, 
-                        newWidget.props.content, 
-                        newWidget.width, 
+                        newWidget.type,
+                        newWidget.props.content,
+                        newWidget.width,
                         newWidget.style?.fontSize
                     );
                     acc.push(newWidget);
@@ -1006,7 +1095,7 @@ const App: React.FC = () => {
                 }
                 return acc;
             }, []);
-            
+
             targetPage.widgets.push(...widgetsToAdd);
             return { ...template, pages: newPages };
         });
@@ -1019,10 +1108,10 @@ const App: React.FC = () => {
     if (view === 'login') return <Login onLogin={handleLogin} />;
     if (view === 'dashboard' || !activeTemplate) {
         return (
-            <Dashboard 
-                templates={templates} 
+            <Dashboard
+                templates={templates}
                 user={user}
-                onSelectTemplate={handleSelectTemplate} 
+                onSelectTemplate={handleSelectTemplate}
                 onCreateNewTemplate={handleCreateNewTemplate}
                 onRenameTemplate={handleRenameTemplate}
                 onDuplicateTemplate={handleDuplicateTemplate}
@@ -1036,38 +1125,44 @@ const App: React.FC = () => {
     }
 
     return (
-        <div className={`flex flex-col h-screen font-sans ${theme}`} onClick={() => contextMenu && setContextMenu(null)}>
-            <div className="flex flex-col h-screen bg-main text-main">
-                <Header 
-                    onUpdateTemplate={handleUpdateTemplate}
-                    onReturnToDashboard={handleReturnToDashboard}
-                    onOpenAiTools={() => setIsAiModalOpen(true)}
-                    onOpenProjectDoc={() => setIsProjectDocModalOpen(true)}
-                    pages={activeTemplate.pages} 
-                    jsonData={activeTemplate.jsonData} 
-                    currentTheme={theme} 
-                    setTheme={setTheme} 
-                />
-                <div className="flex flex-1 overflow-hidden">
-                    <Sidebar 
-                        style={{ width: `${leftPanelWidth}px` }}
-                        jsonData={activeTemplate.jsonData} 
-                        onOpenJsonModal={() => setIsJsonModalOpen(true)}
+        <div className={`flex flex-col font-sans ${theme} ${isRenderMode ? 'min-h-screen h-auto' : 'h-screen'}`} onClick={() => contextMenu && setContextMenu(null)}>
+            <div className={`flex flex-col bg-main text-main ${isRenderMode ? 'min-h-screen h-auto' : 'h-screen'}`}>
+                {!isRenderMode && (
+                    <Header
+                        onUpdateTemplate={handleUpdateTemplate}
+                        onReturnToDashboard={handleReturnToDashboard}
+                        onOpenAiTools={() => setIsAiModalOpen(true)}
+                        onOpenProjectDoc={() => setIsProjectDocModalOpen(true)}
                         pages={activeTemplate.pages}
-                        activePageIndex={activePageIndex}
-                        onSelectWidget={handleSelectWidget}
-                        selectedWidgetId={selectedWidgetId}
-                        onDeleteWidget={(id) => deleteWidget(id)}
-                        onReorderWidgets={reorderWidgets}
-                        widgetBindings={selectedWidgetBindings}
-                        documentation={projectDocumentation}
-                        onShowDocDetail={handleShowDocDetail}
-                        webhookUrl={webhookUrl}
-                        setWebhookUrl={setWebhookUrl}
-                        activeTemplate={activeTemplate}
+                        jsonData={activeTemplate.jsonData}
+                        currentTheme={theme}
+                        setTheme={setTheme}
                     />
-                    <ResizableHandle onResize={setLeftPanelWidth} />
-                    <main className="flex-1 flex flex-col overflow-auto" onClick={handleDeselect}>
+                )}
+                <div className={`flex flex-1 ${isRenderMode ? 'overflow-visible h-auto' : 'overflow-hidden'}`}>
+                    {!isRenderMode && (
+                        <>
+                            <Sidebar
+                                style={{ width: `${leftPanelWidth}px` }}
+                                jsonData={activeTemplate.jsonData}
+                                onOpenJsonModal={() => setIsJsonModalOpen(true)}
+                                pages={activeTemplate.pages}
+                                activePageIndex={activePageIndex}
+                                onSelectWidget={handleSelectWidget}
+                                selectedWidgetId={selectedWidgetId}
+                                onDeleteWidget={(id) => deleteWidget(id)}
+                                onReorderWidgets={reorderWidgets}
+                                widgetBindings={selectedWidgetBindings}
+                                documentation={projectDocumentation}
+                                onShowDocDetail={handleShowDocDetail}
+                                webhookUrl={webhookUrl}
+                                setWebhookUrl={setWebhookUrl}
+                                activeTemplate={activeTemplate}
+                            />
+                            <ResizableHandle onResize={setLeftPanelWidth} />
+                        </>
+                    )}
+                    <main className={`flex-1 flex flex-col ${isRenderMode ? 'overflow-visible h-auto' : 'overflow-auto'}`} onClick={handleDeselect}>
                         <Editor
                             pages={activeTemplate.pages}
                             jsonData={activeTemplate.jsonData}
@@ -1084,7 +1179,7 @@ const App: React.FC = () => {
                             editorView={editorView}
                             setEditorView={setEditorView}
                             onOpenPageAiModal={handleOpenPageAiModal}
-                            editorZoom={editorZoom}
+                            editorZoom={isRenderMode ? 1 : editorZoom} // Force zoom 1 in render mode
                             editorLayout={editorLayout}
                             copiedWidget={copiedWidget}
                             onCopyWidget={handleCopyWidget}
@@ -1092,38 +1187,47 @@ const App: React.FC = () => {
                             onDuplicateWidget={handleDuplicateWidget}
                             alignmentGuides={alignmentGuides}
                             setAlignmentGuides={setAlignmentGuides}
+                            bypassTruncation={isRenderMode}
+                            isRenderMode={isRenderMode} // Pass prop
                         />
                     </main>
-                    <ResizableHandle onResize={(newWidth) => setRightPanelWidth(window.innerWidth - newWidth)} isRight />
-                    <Widgets 
-                        style={{ width: `${rightPanelWidth}px` }}
-                        mode={rightPanelMode}
-                        selectedWidget={selectedWidget} 
-                        onUpdateWidget={updateWidget} 
-                        onShowWidgetList={handleDeselect}
-                        pages={activeTemplate.pages}
-                        activePageIndex={activePageIndex}
-                        onUpdatePageProperties={updatePageProperties}
-                        onApplyPropertiesToAllPages={applyPropertiesToAllPages}
-                        jsonData={activeTemplate.jsonData}
-                        onOpenAiTextModal={handleOpenAiTextModal}
-                        />
+                    {/* Right Panel */}
+                    {!isRenderMode && (
+                        <>
+                            <ResizableHandle onResize={(newWidth) => setRightPanelWidth(window.innerWidth - newWidth)} isRight />
+                            <Widgets
+                                style={{ width: `${rightPanelWidth}px` }}
+                                mode={rightPanelMode}
+                                selectedWidget={selectedWidget}
+                                onUpdateWidget={updateWidget}
+                                onShowWidgetList={handleDeselect}
+                                pages={activeTemplate.pages}
+                                activePageIndex={activePageIndex}
+                                onUpdatePageProperties={updatePageProperties}
+                                onApplyPropertiesToAllPages={applyPropertiesToAllPages}
+                                jsonData={activeTemplate.jsonData}
+                                onOpenAiTextModal={handleOpenAiTextModal}
+                            />
+                        </>
+                    )}
                     <Chatbot />
                 </div>
             </div>
             {/* Floating Controls - now at top level, fixed */}
-            <FloatingControls
-                activePageIndex={activePageIndex}
-                onDeletePage={deletePage}
-                onGenerateAi={handleOpenPageAiModal}
-                editorZoom={editorZoom}
-                setEditorZoom={setEditorZoom}
-                editorLayout={editorLayout}
-                onSetEditorLayout={setEditorLayout}
-                initialX={floatingControlsPosition.x}
-                initialY={floatingControlsPosition.y}
-                onPositionChange={setFloatingControlsPosition}
-            />
+            {!isRenderMode && (
+                <FloatingControls
+                    activePageIndex={activePageIndex}
+                    onDeletePage={deletePage}
+                    onGenerateAi={handleOpenPageAiModal}
+                    editorZoom={editorZoom}
+                    setEditorZoom={setEditorZoom}
+                    editorLayout={editorLayout}
+                    onSetEditorLayout={setEditorLayout}
+                    initialX={floatingControlsPosition.x}
+                    initialY={floatingControlsPosition.y}
+                    onPositionChange={setFloatingControlsPosition}
+                />
+            )}
             <GenerateJsonModal
                 isOpen={isGenerateModalOpen}
                 onClose={() => setIsGenerateModalOpen(false)}
@@ -1131,7 +1235,7 @@ const App: React.FC = () => {
                 onJsonGenerated={(newJson) => {
                     setActiveTemplate(t => {
                         if (!t) return t;
-                        return {...t, jsonData: newJson}
+                        return { ...t, jsonData: newJson }
                     });
                     setIsGenerateModalOpen(false);
                 }}
@@ -1144,7 +1248,7 @@ const App: React.FC = () => {
                 // Fix: Replaced updateActiveTemplate with setActiveTemplate
                 setJsonData={(json) => setActiveTemplate(t => {
                     if (!t) return t;
-                    return {...t, jsonData: json}
+                    return { ...t, jsonData: json }
                 })}
                 onOpenGenerateModal={() => setIsGenerateModalOpen(true)}
             />
@@ -1154,18 +1258,18 @@ const App: React.FC = () => {
                 onApplyExtractedWidgets={handleApplyExtractedWidgets}
                 onApplyGeneratedTemplate={handleApplyGeneratedTemplate}
             />
-             <ProjectDocModal
+            <ProjectDocModal
                 isOpen={isProjectDocModalOpen}
                 onClose={() => setIsProjectDocModalOpen(false)}
                 onApplyDocumentation={handleApplyProjectDocumentation}
             />
-             <PageAiGeneratorModal
+            <PageAiGeneratorModal
                 isOpen={isPageAiModalOpen}
                 onClose={() => { setIsPageAiModalOpen(false); setTargetPageIndexForAi(null); }}
                 onApply={handleApplyAiPageContent}
                 pageIndex={targetPageIndexForAi}
             />
-            <DocumentationDetailModal 
+            <DocumentationDetailModal
                 isOpen={isDocDetailModalOpen}
                 onClose={() => setIsDocDetailModalOpen(false)}
                 content={docDetailContent}
@@ -1179,20 +1283,20 @@ const App: React.FC = () => {
             />
             {contextMenu && (
                 <ContextMenu
-                  x={contextMenu.x}
-                  y={contextMenu.y}
-                  type={contextMenu.type}
-                  bindableProperties={contextMenu.widget ? getBindableProperties(contextMenu.widget.type) : []}
-                  jsonData={activeTemplate.jsonData}
-                  onBind={(binding) => contextMenu.widget && handleDataBinding(contextMenu.widget.id, binding)}
-                  onShowPageProperties={() => contextMenu.pageIndex !== undefined && handleShowPageProperties(contextMenu.pageIndex)}
-                  onShowWidgetProperties={() => contextMenu.widget && handleShowWidgetProperties(contextMenu.widget.id)}
-                  onClose={() => setContextMenu(null)}
-                  copiedWidget={copiedWidget}
-                  onCopyWidget={handleCopyWidget}
-                  onPasteWidget={handlePasteWidget}
-                  onDuplicateWidget={handleDuplicateWidget}
-                  currentTheme={theme}
+                    x={contextMenu.x}
+                    y={contextMenu.y}
+                    type={contextMenu.type}
+                    bindableProperties={contextMenu.widget ? getBindableProperties(contextMenu.widget.type) : []}
+                    jsonData={activeTemplate.jsonData}
+                    onBind={(binding) => contextMenu.widget && handleDataBinding(contextMenu.widget.id, binding)}
+                    onShowPageProperties={() => contextMenu.pageIndex !== undefined && handleShowPageProperties(contextMenu.pageIndex)}
+                    onShowWidgetProperties={() => contextMenu.widget && handleShowWidgetProperties(contextMenu.widget.id)}
+                    onClose={() => setContextMenu(null)}
+                    copiedWidget={copiedWidget}
+                    onCopyWidget={handleCopyWidget}
+                    onPasteWidget={handlePasteWidget}
+                    onDuplicateWidget={handleDuplicateWidget}
+                    currentTheme={theme}
                 />
             )}
         </div>

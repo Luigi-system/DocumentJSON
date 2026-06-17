@@ -29,36 +29,38 @@ interface EditorProps {
     onCopyWidget: () => void;
     onPasteWidget: () => void;
     onDuplicateWidget: () => void;
-    alignmentGuides: { vertical: number[]; horizontal: number[] };
-    setAlignmentGuides: (guides: { vertical: number[]; horizontal: number[] }) => void;
+    alignmentGuides: { vertical: number[], horizontal: number[] };
+    setAlignmentGuides: (guides: { vertical: number[], horizontal: number[] }) => void;
+    isRenderMode?: boolean; // New prop
 }
 
 const Editor: React.FC<EditorProps> = (props) => {
-    
-    const viewButtonClass = (view: 'canvas' | 'manager') => 
-        `px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
-            props.editorView === view 
-            ? 'bg-panel text-indigo-500 shadow-sm' 
+
+    const viewButtonClass = (view: 'canvas' | 'manager') =>
+        `px-4 py-2 text-sm font-semibold rounded-md transition-colors ${props.editorView === view
+            ? 'bg-panel text-indigo-500 shadow-sm'
             : 'text-subtle hover:bg-tertiary'
         }`;
 
     return (
-        <div className="flex-grow flex flex-col relative">
-            <div className="p-2 border-b border-main flex-shrink-0 flex items-center justify-start space-x-2">
-                 <div className="p-1 bg-tertiary rounded-lg flex">
-                    <button onClick={() => props.setEditorView('canvas')} className={viewButtonClass('canvas')}>
-                        Editor Visual
-                    </button>
-                    <button onClick={() => props.setEditorView('manager')} className={viewButtonClass('manager')}>
-                        Gestor de Páginas
-                    </button>
+        <div className={`flex-grow flex flex-col relative ${props.isRenderMode ? 'bg-white' : ''}`}>
+            {!props.isRenderMode && (
+                <div className="p-2 border-b border-main flex-shrink-0 flex items-center justify-start space-x-2">
+                    <div className="p-1 bg-tertiary rounded-lg flex">
+                        <button onClick={() => props.setEditorView('canvas')} className={viewButtonClass('canvas')}>
+                            Editor Visual
+                        </button>
+                        <button onClick={() => props.setEditorView('manager')} className={viewButtonClass('manager')}>
+                            Gestor de Páginas
+                        </button>
+                    </div>
                 </div>
-            </div>
-             {/* FloatingControls are now rendered within each Page component */}
+            )}
+            {/* FloatingControls are now rendered within each Page component */}
             {props.editorView === 'canvas' ? (
-                 <div className="bg-editor-canvas p-4 md:p-10 flex-grow overflow-auto">
-                    <div 
-                        className="flex flex-col items-center gap-8 mx-auto"
+                <div className={`${props.isRenderMode ? 'bg-white p-0 overflow-visible' : 'bg-editor-canvas p-4 md:p-10 overflow-auto'} flex-grow`}>
+                    <div
+                        className="pages-container flex flex-col items-center gap-8 mx-auto"
                         style={{ transform: `scale(${props.editorZoom})`, transformOrigin: 'top center', transition: 'transform 0.2s ease-out' }}
                     >
                         {props.editorLayout === 'paginated' ? (
@@ -75,8 +77,8 @@ const Editor: React.FC<EditorProps> = (props) => {
                                 selectedWidgetId={props.selectedWidgetId}
                                 onWidgetRightClick={props.onWidgetRightClick}
                                 onPageRightClick={props.onPageRightClick}
-                                isActive={true}
-                                onSetActivePage={() => {}}
+                                isActive={!props.isRenderMode}
+                                onSetActivePage={() => { }}
                                 copiedWidget={props.copiedWidget}
                                 onCopyWidget={props.onCopyWidget}
                                 onPasteWidget={props.onPasteWidget}
@@ -84,6 +86,7 @@ const Editor: React.FC<EditorProps> = (props) => {
                                 editorZoom={props.editorZoom} // Pass editorZoom
                                 alignmentGuides={props.alignmentGuides}
                                 setAlignmentGuides={props.setAlignmentGuides}
+                                bypassTruncation={props.bypassTruncation}
                             />
                         ) : (
                             props.pages.map((pageData, index) => (
@@ -100,7 +103,7 @@ const Editor: React.FC<EditorProps> = (props) => {
                                     selectedWidgetId={props.selectedWidgetId}
                                     onWidgetRightClick={props.onWidgetRightClick}
                                     onPageRightClick={props.onPageRightClick}
-                                    isActive={index === props.activePageIndex}
+                                    isActive={!props.isRenderMode && index === props.activePageIndex}
                                     onSetActivePage={props.onSetActivePage}
                                     copiedWidget={props.copiedWidget}
                                     onCopyWidget={props.onCopyWidget}
@@ -109,12 +112,13 @@ const Editor: React.FC<EditorProps> = (props) => {
                                     editorZoom={props.editorZoom} // Pass editorZoom
                                     alignmentGuides={props.alignmentGuides}
                                     setAlignmentGuides={props.setAlignmentGuides}
+                                    bypassTruncation={props.bypassTruncation}
                                 />
                             ))
                         )}
 
                         {props.editorLayout === 'paginated' && props.pages.length > 0 && (
-                            <Pagination 
+                            <Pagination
                                 currentPage={props.activePageIndex + 1}
                                 totalPages={props.pages.length}
                                 onPageChange={(page) => props.onSetActivePage(page - 1)}
@@ -122,9 +126,9 @@ const Editor: React.FC<EditorProps> = (props) => {
                             />
                         )}
                     </div>
-                 </div>
+                </div>
             ) : (
-                <PageManager 
+                <PageManager
                     pages={props.pages}
                     onAddPage={props.onAddPage}
                     onDeletePage={props.onDeletePage}
