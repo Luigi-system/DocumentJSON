@@ -68,7 +68,7 @@ app.post('/api/webhook/:templateId', async (req, res) => {
         // OPTIMIZED STRATEGY:
         // We will inject the data directly into the page context using page.evaluate() after loading.
 
-        const renderUrl = `${CLIENT_URL}/?mode=render&templateId=${templateId}`;
+        const renderUrl = `${CLIENT_URL}/canvas/${templateId}?mode=render&templateId=${templateId}`;
         console.log(`Rendering PDF from: ${renderUrl}`);
 
         await page.goto(renderUrl, { waitUntil: 'networkidle0' });
