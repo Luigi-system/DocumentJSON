@@ -14,7 +14,6 @@ import ContextMenu from '@/pages/canvas/components/ContextMenu';
 
 import ResizableHandle from '@/pages/canvas/components/ResizableHandle';
 import DocumentationDetailModal from '@/pages/canvas/components/DocumentationDetailModal';
-import AiTextGeneratorModal from '@/pages/canvas/components/AiTextGeneratorModal';
 import FloatingControls from '@/pages/canvas/components/FloatingControls';
 // Constants & Types
 import { DEFAULT_PAGE_PROPERTIES } from '@/constants';
@@ -151,13 +150,23 @@ const AppRoutes: React.FC = () => {
 
     // Effect to select template in render mode once templates are loaded
     useEffect(() => {
-        if (isRenderMode && templates.length > 0 && !activeTemplate) {
+        if (isRenderMode && !activeTemplate) {
             const params = new URLSearchParams(window.location.search);
             const templateId = params.get('templateId');
             if (templateId) {
-                const found = templates.find(t => t.id === templateId);
+                // Try to get injected template first (bypasses empty localStorage in Puppeteer)
+                const injectedTemplate = (window as any).__INJECTED_TEMPLATE__;
+                let found = injectedTemplate || templates.find(t => t.id === templateId);
+                
                 if (found) {
-                    setActiveTemplate(JSON.parse(JSON.stringify(found)));
+                    let templateToSet = JSON.parse(JSON.stringify(found));
+                    // Check if data was injected before we loaded templates
+                    const injectedData = (window as any).__INJECTED_DATA__;
+                    if (injectedData) {
+                        templateToSet.jsonData = JSON.stringify(injectedData, null, 2);
+                        templateToSet = paginateTemplate(templateToSet);
+                    }
+                    setActiveTemplate(templateToSet);
                 }
             }
         }
@@ -1102,7 +1111,7 @@ const AppRoutes: React.FC = () => {
     );
 
     const canvasPage = !activeTemplate ? (
-        templatesLoaded ? <Navigate to="/plantillas" replace /> : (
+        (templatesLoaded && !isRenderMode) ? <Navigate to="/plantillas" replace /> : (
             <div className="min-h-screen bg-main text-main theme-night flex items-center justify-center">
                 Cargando plantilla...
             </div>
@@ -1167,7 +1176,7 @@ const AppRoutes: React.FC = () => {
                             setEditorView={setEditorView}
                             onOpenPageAiModal={handleOpenPageAiModal}
                             editorZoom={isRenderMode ? 1 : editorZoom} // Force zoom 1 in render mode
-                            editorLayout={editorLayout}
+                            editorLayout={isRenderMode ? 'continuous' : editorLayout}
                             copiedWidget={copiedWidget}
                             onCopyWidget={handleCopyWidget}
                             onPasteWidget={handlePasteWidget}
@@ -1248,12 +1257,7 @@ const AppRoutes: React.FC = () => {
                 content={docDetailContent}
                 onRegenerate={handleRegenerateDocExplanation}
             />
-            <AiTextGeneratorModal
-                isOpen={isAiTextModalOpen}
-                onClose={() => { setIsAiTextModalOpen(false); setTargetWidgetIdForAiText(null); }}
-                onApply={handleApplyAiGeneratedText}
-                projectDocumentation={projectDocumentation}
-            />
+
             {contextMenu && (
                 <ContextMenu
                     x={contextMenu.x}

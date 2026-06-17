@@ -14,4 +14,10 @@ export function loadLocalTemplates(): Template[] | null {
 
 export function saveLocalTemplates(templates: Template[]): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(templates));
+    // Sync to backend so Puppeteer can see it
+    fetch('http://localhost:3001/api/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(templates)
+    }).catch(err => console.error('Failed to sync templates to backend', err));
 }
